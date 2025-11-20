@@ -1,0 +1,42 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// ============================================
+// MASTER TABLE - PCRR als Single Source of Truth
+// ============================================
+
+// 1. MASTER TABLE: Alle Kombinationen aus PCRR laden
+Master:
+LOAD DISTINCT
+    [PCRR.Project ID] as [MST.Project ID],
+    [PCRR.Project Description] as [MST.Project Description],
+    [PCRR.Person ID (CL)] as [MST.Person ID (CL)],
+    [PCRR.Person ID (PM1)] as [MST.Person ID (PM1)],
+    [PCRR.Person ID (PM2)] as [MST.Person ID (PM2)],
+    [PCRR.Customer Group] as [MST.Customer Group],
+    [PCRR.Customer] as [MST.Customer],
+    [PCRR.Customer Name] as [MST.Customer Name],
+    [PCRR.Year] as [MST.Year],
+    [PCRR.Period] as [MST.Period],
+    [PCRR.Year] * 100 + [PCRR.Period] as [MST.YearPeriod],
+    [PCRR.Project ID] & '|' & [PCRR.Year] & '|' & [PCRR.Period] as [MST.Key],
+    [PCRR.Year] & '|' & [PCRR.Period] as [MST.YearPeriodKey]
+RESIDENT PCRR_Data;
+
+
+// 2. MST.KEY ZU TEST10 HINZUFÜGEN
+LEFT JOIN (Test10_Data)
+LOAD 
+    [Test10.Project ID], 
+    [Test10.Year], 
+    [Test10.Period],
+    [Test10.Project ID] & '|' & [Test10.Year] & '|' & [Test10.Period] as [MST.Key]
+RESIDENT Test10_Data;
+
+
+// 3. NYC LINK TABLE: Bridge mit Composite Keys (verhindert Synthetic Keys)
+NYC_Link:
+LOAD DISTINCT
+    [MST.YearPeriodKey],
+    [MST.YearPeriodKey] as [NYC.Link.Key]
+RESIDENT Master;

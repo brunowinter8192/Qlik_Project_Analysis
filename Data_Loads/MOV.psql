@@ -1,0 +1,227 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// 1. MAPPING-TABELLEN: Margin und Lookups vorbereiten
+
+// 1.1 Margin aus PCRR_Data für Revenue PCRE Berechnung
+ProjectMarginMap:
+MAPPING LOAD
+    [PCRR.Project ID] & '|' & [PCRR.Year] & '|' & [PCRR.Period] as Key,
+    If([PCRR.Estimated Revenue] <> 0,
+       (([PCRR.Estimated Revenue] - [PCRR.Estimated Costs]) / [PCRR.Estimated Revenue]) * 100,
+       0) as EstimatedMarginPct
+RESIDENT PCRR_Data;
+
+
+// 2. HILFSTABELLEN: Movements Basis-Daten und Lookups
+
+// 2.1 Alle Zeilen aus ANL_Data als Basis laden
+TempMovements:
+LOAD 
+    [ANL.Project ID],
+    [ANL.Year],
+    [ANL.Period],
+    [ANL.PCRE],
+    [ANL.Inventory Value],
+    [ANL.Inventory Qty],
+    [ANL.Balance Value],
+    [ANL.Balance Qty]
+RESIDENT ANL_Data;
+
+// 2.2 Max Periode pro Projekt+Jahr
+MaxPeriodPerYear:
+MAPPING LOAD
+    [ANL.Project ID] & '|' & [ANL.Year] as Key,
+    Max([ANL.Period]) as MaxPeriod
+RESIDENT TempMovements
+GROUP BY [ANL.Project ID], [ANL.Year];
+
+// 2.3 Check ob Vorjahr existiert
+PrevYearExists:
+MAPPING LOAD
+    [ANL.Project ID] & '|' & [ANL.Year] as Key,
+    1 as Exists
+RESIDENT TempMovements;
+
+// 2.4 Inventory Value Lookup
+InventoryValueMap:
+MAPPING LOAD
+    [ANL.Project ID] & '|' & [ANL.Year] & '|' & [ANL.Period] & '|' & [ANL.PCRE] as Key,
+    [ANL.Inventory Value]
+RESIDENT TempMovements;
+
+// 2.5 Inventory Qty Lookup
+InventoryQtyMap:
+MAPPING LOAD
+    [ANL.Project ID] & '|' & [ANL.Year] & '|' & [ANL.Period] & '|' & [ANL.PCRE] as Key,
+    [ANL.Inventory Qty]
+RESIDENT TempMovements;
+
+
+// 3. TRANSFORMATIONEN: Previous Periode berechnen und Current Values vorbereiten
+
+// 3.1 Movements Temp mit Previous Periode Logic
+PCRE_Movements_Temp:
+LOAD
+    Text([ANL.Project ID]) as [MOV.Project ID],
+    Num([ANL.Year], '0') as [MOV.Year],
+    Num([ANL.Period], '0') as [MOV.Period],
+    [ANL.PCRE] as [MOV.PCRE],
+    
+    If([ANL.Period] > 1,
+        [ANL.Period] - 1,
+        If(ApplyMap('PrevYearExists', [ANL.Project ID] & '|' & ([ANL.Year] - 1), 0) = 1,
+           ApplyMap('MaxPeriodPerYear', [ANL.Project ID] & '|' & ([ANL.Year] - 1), 0),
+           null())
+    ) as MOV_PrevPeriod,
+    
+    If([ANL.Period] > 1,
+        [ANL.Year],
+        [ANL.Year] - 1
+    ) as MOV_PrevYear,
+    
+    [ANL.Inventory Value] as MOV_CurrentInvValue,
+    [ANL.Inventory Qty] as MOV_CurrentInvQty,
+    [ANL.Balance Value] as MOV_TempBalanceValue,
+    [ANL.Balance Qty] as MOV_TempBalanceQty,
+    
+    [ANL.Project ID] & '|' & 
+    If([ANL.Period] > 1, [ANL.Year], [ANL.Year] - 1) & '|' & 
+    If([ANL.Period] > 1,
+        [ANL.Period] - 1,
+        If(ApplyMap('PrevYearExists', [ANL.Project ID] & '|' & ([ANL.Year] - 1), 0) = 1,
+           ApplyMap('MaxPeriodPerYear', [ANL.Project ID] & '|' & ([ANL.Year] - 1), 0),
+           null())
+    ) & '|' & [ANL.PCRE] as MOV_PrevLookupKey
+    
+RESIDENT TempMovements;
+
+// 3.2 Previous Values via ApplyMap holen (abhängig von 3.1)
+PCRE_Movements_Calc:
+LOAD
+    [MOV.Project ID],
+    [MOV.Year],
+    [MOV.Period],
+    [MOV.PCRE],
+    
+    MOV_CurrentInvValue,
+    MOV_CurrentInvQty,
+    MOV_TempBalanceValue,
+    MOV_TempBalanceQty,
+    MOV_PrevPeriod,
+    
+    If(Not IsNull(MOV_PrevLookupKey),
+       ApplyMap('InventoryValueMap', MOV_PrevLookupKey, 0),
+       0) as MOV_PrevInvValue,
+       
+    If(Not IsNull(MOV_PrevLookupKey),
+       ApplyMap('InventoryQtyMap', MOV_PrevLookupKey, 0),
+       0) as MOV_PrevInvQty
+    
+RESIDENT PCRE_Movements_Temp;
+
+DROP TABLE PCRE_Movements_Temp;
+
+
+// 4. BERECHNUNGEN: Finale Movement-Felder und Revenue PCRE
+
+// 4.1 PCRE Level Movements mit allen berechneten Feldern
+PCRE_Movements:
+LOAD
+    [MOV.Project ID],
+    [MOV.Year],
+    [MOV.Period],
+    [MOV.PCRE],
+    
+    // ↓↓↓ NEU: MST.Key hinzufügen ↓↓↓
+    [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period] as [MST.Key],
+    
+    Num((If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+         If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)) + 
+         If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue), '#.##0,00') as [MOV.C.Value],
+    
+    Num((If(MOV_CurrentInvQty = 0, 0, MOV_CurrentInvQty) - 
+         If(MOV_PrevInvQty = 0, 0, MOV_PrevInvQty)) + 
+         If(MOV_TempBalanceQty = 0, 0, MOV_TempBalanceQty), '#.##0,00') as [MOV.C.Qty],
+    
+    Num(If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue), '#.##0,00') as [MOV.Balance Value],
+    Num(If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue), '#.##0,00') & '|' & [MOV.Period] as [MOV.ANL Balance Value Current],
+    
+    Num(If(MOV_TempBalanceQty = 0, 0, MOV_TempBalanceQty), '#.##0,00') as [MOV.Balance Qty],
+    Num(If(MOV_TempBalanceQty = 0, 0, MOV_TempBalanceQty), '#.##0,00') & '|' & [MOV.Period] as [MOV.ANL Balance Qty Current],
+    
+    Num(If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+        If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue), '#.##0,00') as [MOV.C.Inventory Value],
+    Num(If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue), '#.##0,00') & '|' & [MOV.Period] as [MOV.ANL Inventory Value Current],
+    Num(If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue), '#.##0,00') & '|' & If(IsNull(MOV_PrevPeriod), '-', MOV_PrevPeriod) as [MOV.ANL Inventory Value Previous],
+    
+    Num(If(MOV_CurrentInvQty = 0, 0, MOV_CurrentInvQty), '#.##0,00') & '|' & [MOV.Period] as [MOV.ANL Inventory Qty Current],
+    Num(If(MOV_PrevInvQty = 0, 0, MOV_PrevInvQty), '#.##0,00') & '|' & If(IsNull(MOV_PrevPeriod), '-', MOV_PrevPeriod) as [MOV.ANL Inventory Qty Previous],
+    Num(If(MOV_CurrentInvQty = 0, 0, MOV_CurrentInvQty) - 
+        If(MOV_PrevInvQty = 0, 0, MOV_PrevInvQty), '#.##0,00') as [MOV.C.Inventory Qty],
+    
+    Num(0, '#.##0,00') as [MOV.C.Saldo Total],
+    
+    If(ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) <> 100 AND
+       ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) <> 0,
+       Num(((If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+             If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)) + 
+             If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue)) / 
+           (1 - (ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) / 100)), '#.##0,00'),
+       Num(0, '#.##0,00')) as [MOV.C.Revenue PCRE]
+    
+RESIDENT PCRE_Movements_Calc
+WHERE MOV_CurrentInvValue <> 0 OR MOV_CurrentInvQty <> 0 OR
+      MOV_TempBalanceValue <> 0 OR MOV_TempBalanceQty <> 0 OR
+      MOV_PrevInvValue <> 0 OR MOV_PrevInvQty <> 0;
+
+// 4.2 Periodensummen hinzufügen (abhängig von 4.1)
+CONCATENATE (PCRE_Movements)
+LOAD
+    [MOV.Project ID],
+    [MOV.Year], 
+    [MOV.Period],
+    'PERIODE_SUMME' as [MOV.PCRE],
+    
+    // ↓↓↓ NEU: MST.Key auch für Periodensummen ↓↓↓
+    [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period] as [MST.Key],
+    
+    Num(Sum((If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+             If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)) + 
+             If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue)), '#.##0,00') as [MOV.C.Value],
+    
+    '-' as [MOV.C.Qty],
+    
+    Num(Sum(If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+            If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)), '#.##0,00') as [MOV.C.Inventory Value],
+    
+    Num(Sum(If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue)), '#.##0,00') as [MOV.Balance Value],
+    
+    Num(Sum((If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+             If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)) + 
+             If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue)), '#.##0,00') as [MOV.C.Saldo Total],
+    
+    '-' as [MOV.Balance Qty],
+    '-' as [MOV.C.Inventory Qty],
+    '-' as [MOV.ANL Inventory Qty Current],
+    '-' as [MOV.ANL Inventory Qty Previous],
+    '-' as [MOV.ANL Balance Qty Current],
+    '-' as [MOV.ANL Inventory Value Current],
+    '-' as [MOV.ANL Inventory Value Previous],
+    '-' as [MOV.ANL Balance Value Current],
+    
+    If(ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) <> 100 AND
+       ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) <> 0,
+       Num(Sum((If(MOV_CurrentInvValue = 0, 0, MOV_CurrentInvValue) - 
+                If(MOV_PrevInvValue = 0, 0, MOV_PrevInvValue)) + 
+                If(MOV_TempBalanceValue = 0, 0, MOV_TempBalanceValue)) / 
+           (1 - (ApplyMap('ProjectMarginMap', [MOV.Project ID] & '|' & [MOV.Year] & '|' & [MOV.Period], 0) / 100)), '#.##0,00'),
+       Num(0, '#.##0,00')) as [MOV.C.Revenue PCRE]
+    
+RESIDENT PCRE_Movements_Calc
+GROUP BY [MOV.Project ID], [MOV.Year], [MOV.Period];
+
+
+// 5. AUFRÄUMEN: Temporäre Tabellen droppen
+DROP TABLE PCRE_Movements_Calc;
+DROP TABLE TempMovements;

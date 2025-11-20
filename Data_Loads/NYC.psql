@@ -1,0 +1,100 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// ============================================
+// NYC SECTION - KOMPLETT
+// ============================================
+
+
+// 1. NYC FORECAST: Laden aus Excel
+NYC_Raw:
+CROSSTABLE([TempMonth], [TempValue], 1)
+LOAD *
+FROM [lib://DATA Transfer:DataFiles/NYC_*.xlsx]
+(ooxml, embedded labels);
+
+// 1.1 NYC Forecast transformieren
+NYC_Forecast_Data:
+LOAD
+    Num(
+        Match(Left(TempMonth, 3), 'Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'), 
+        '0'
+    ) as [NYC.Forecast.Period],
+    
+    Num(
+        If(Right(TempMonth, 2) = '25', 2025, 2026), 
+        '0'
+    ) as [NYC.Forecast.Year],
+    
+    Num(
+        Alt(
+            Num#(Replace(TempValue, '.', ''), '#0,00'),
+            Num#(TempValue, '#0.00'),
+            Num#(TempValue, '#0'),
+            999999
+        ), 
+        '#.##0,00'
+    ) as [NYC.Forecast.Value],
+    
+    If(Right(TempMonth, 2) = '25', 2025, 2026) & '|' & 
+    Match(Left(TempMonth, 3), 'Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez') 
+    as [NYC.YearPeriodKey]
+    
+RESIDENT NYC_Raw;
+
+DROP TABLE NYC_Raw;
+
+
+// 2. NYC2: PCRR Projekte die IN Test10 sind UND in NYC_Forecast Perioden
+NYC2_Data:
+LOAD
+    Text([PCRR.Project ID]) as [NYC2.Project ID],
+    Num([PCRR.Year], '0') as [NYC2.Year],
+    Num([PCRR.Period], '0') as [NYC2.Period],
+    Num([PCRR.Calculated POC Revenue in Acc. Currency/Period], '#.##0,00') as [NYC2.Revenue],
+    [PCRR.Project ID] & '|' & [PCRR.Year] & '|' & [PCRR.Period] as [MST.Key]
+RESIDENT PCRR_Data
+WHERE Exists([Test10.Project ID], [PCRR.Project ID])
+    AND Exists([NYC.YearPeriodKey], [PCRR.Year] & '|' & [PCRR.Period]);
+
+
+// 3. NYC_DATA: Aggregation aus NYC2 mit Link Key
+NYC_Data:
+LOAD
+    [NYC2.Year] as [NYC.Year],
+    [NYC2.Period] as [NYC.Period],
+    Num(Sum([NYC2.Revenue]), '#.##0,00') as [NYC.Revenue],
+    [NYC2.Year] & '|' & [NYC2.Period] as [NYC.YearPeriodKey],
+    [NYC2.Year] & '|' & [NYC2.Period] as [NYC.Link.Key]
+RESIDENT NYC2_Data
+GROUP BY [NYC2.Year], [NYC2.Period];
+
+
+// 4. FORECAST MAPPING: Für Delta-Berechnung
+Map_NYC_Forecast:
+MAPPING LOAD
+    [NYC.YearPeriodKey],
+    [NYC.Forecast.Value]
+RESIDENT NYC_Forecast_Data;
+
+
+// 5. NYC_DATA FINAL: Mit Forecast und Delta
+NYC_Data_Final:
+LOAD
+    *,
+    
+    // 5.1 Forecast Value via MAPPING
+    Num(ApplyMap('Map_NYC_Forecast', [NYC.YearPeriodKey], 0), '#.##0,00') as [NYC.Forecast],
+    
+    // 5.2 Delta ABSOLUT (Revenue - Forecast, mit Vorzeichen)
+    Num([NYC.Revenue] - ApplyMap('Map_NYC_Forecast', [NYC.YearPeriodKey], 0), '#.##0,00') as [NYC.C.Delta Absolut],
+    
+    // 5.3 Delta BETRAG (ohne Vorzeichen, immer positiv)
+    Num(Fabs([NYC.Revenue] - ApplyMap('Map_NYC_Forecast', [NYC.YearPeriodKey], 0)), '#.##0,00') as [NYC.C.Delta Betrag]
+    
+RESIDENT NYC_Data;
+
+
+// 6. AUFRÄUMEN
+DROP TABLE NYC_Data;
+RENAME TABLE NYC_Data_Final TO NYC_Data;

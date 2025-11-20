@@ -1,0 +1,309 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// 1. HAUPTDATEN-LOAD: PCRR_Data aus Excel-Files
+FOR EACH vFile IN FileList('lib://DATA Transfer:DataFiles/PCRR_*')
+    IF NoOfRows('PCRR_Data') = 0 OR IsNull(TableNumber('PCRR_Data')) THEN
+        PCRR_Data:
+        LOAD
+            Text([Project ID]) as [PCRR.Project ID],
+            If(Len(Trim([Project Description])) > 0 AND NOT IsNull([Project Description]), 
+                [Project Description], '-') as [PCRR.Project Description],
+            If(Len(Trim([Person ID (CL)])) > 0 AND NOT IsNull([Person ID (CL)]), 
+                [Person ID (CL)], '-') as [PCRR.Person ID (CL)],
+            If(Len(Trim([Person ID (PM1)])) > 0 AND NOT IsNull([Person ID (PM1)]), 
+                [Person ID (PM1)], '-') as [PCRR.Person ID (PM1)],
+            If(Len(Trim([Person ID (PM2)])) > 0 AND NOT IsNull([Person ID (PM2)]), 
+                [Person ID (PM2)], '-') as [PCRR.Person ID (PM2)],
+            Num([Year], '0') as [PCRR.Year],
+            Num([Period], '0') as [PCRR.Period],
+            If(Len(Trim([Order Currency])) > 0 AND NOT IsNull([Order Currency]), 
+                [Order Currency], '-') as [PCRR.Order Currency],
+            If(Len(Trim([Project Currency])) > 0 AND NOT IsNull([Project Currency]), 
+                [Project Currency], 'EUR') as [PCRR.Project Currency],
+            
+            Num(If(Len(Trim([Currency Rate])) > 0 AND NOT IsNull([Currency Rate]), 
+                    Replace([Currency Rate], '.', ','), 0), '#0,00####') as [PCRR.Currency Rate],
+            
+            If(Len(Trim([CO Comments])) > 0 AND NOT IsNull([CO Comments]), 
+                [CO Comments], '-') as [PCRR.CO Comments],
+            If(Len(Trim([POC Method])) > 0 AND NOT IsNull([POC Method]), 
+                [POC Method], '-') as [PCRR.POC Method],
+            If(Len(Trim([Project Group])) > 0 AND NOT IsNull([Project Group]), 
+                [Project Group], '-') as [PCRR.Project Group],
+            Num(If(Len(Trim([Currency Rate Type])) > 0 AND NOT IsNull([Currency Rate Type]), 
+                    [Currency Rate Type], 0), '0') as [PCRR.Currency Rate Type],
+            If(Len(Trim([Status Customer Order])) > 0 AND NOT IsNull([Status Customer Order]), 
+                [Status Customer Order], '-') as [PCRR.Status Customer Order],
+            If(Len(Trim([Customer Group])) > 0 AND NOT IsNull([Customer Group]), 
+                [Customer Group], '-') as [PCRR.Customer Group],
+            If(Len(Trim([Customer])) > 0 AND NOT IsNull([Customer]), 
+                [Customer], '-') as [PCRR.Customer],
+            If(Len(Trim([Customer Name])) > 0 AND NOT IsNull([Customer Name]), 
+                [Customer Name], '-') as [PCRR.Customer Name],
+            Text([Plan Finish]) as [PCRR.Plan Finish],
+            
+            Num(If(Len(Trim([Planned Revenue])) > 0 AND NOT IsNull([Planned Revenue]), 
+                    Replace([Planned Revenue], '.', ','), 0), '#.##0,00') as [PCRR.Planned Revenue],
+            
+            Num(If(Len(Trim([Estimated Revenue])) > 0 AND NOT IsNull([Estimated Revenue]), 
+                    Replace([Estimated Revenue], '.', ','), 0), '#.##0,00') as [PCRR.Estimated Revenue],
+            
+            Num(If(Len(Trim([Estimated Costs])) > 0 AND NOT IsNull([Estimated Costs]), 
+                    Replace([Estimated Costs], '.', ','), 0), '#.##0,00') as [PCRR.Estimated Costs],
+            
+            Num(If(Len(Trim([Actual Capitalized Costs])) > 0 AND NOT IsNull([Actual Capitalized Costs]), 
+                    Replace([Actual Capitalized Costs], '.', ','), 0), '#.##0,00') as [PCRR.Actual Capitalized Costs],
+            
+            Num(If(Len(Trim([Total Actual Cost])) > 0 AND NOT IsNull([Total Actual Cost]), 
+                    Replace([Total Actual Cost], '.', ','), 0), '#.##0,00') as [PCRR.Total Actual Cost],
+            
+            Num(If(Len(Trim([Project Inventory])) > 0 AND NOT IsNull([Project Inventory]), 
+                    Replace([Project Inventory], '.', ','), 0), '#.##0,00') as [PCRR.Project Inventory],
+            
+            Num(If(Len(Trim([POC Previously Accumulated])) > 0 AND NOT IsNull([POC Previously Accumulated]), 
+                    Replace([POC Previously Accumulated], '.', ','), 0), '#.##0,00') as [PCRR.POC Previously Accumulated],
+            
+            Num(If(Len(Trim([POC Current Period])) > 0 AND NOT IsNull([POC Current Period]), 
+                    Replace([POC Current Period], '.', ','), 0) * 100, '#.##0,00') as [PCRR.POC Current Period %],
+            
+            Num(If(Len(Trim([Costs Recognized Current Period])) > 0 AND NOT IsNull([Costs Recognized Current Period]), 
+                    Replace([Costs Recognized Current Period], '.', ','), 0), '#.##0,00') as [PCRR.Costs Recognized Current Period],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Order Currency/Period])) > 0 AND NOT IsNull([Calculated POC Revenue in Order Currency/Period]), 
+                    Replace([Calculated POC Revenue in Order Currency/Period], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Order Currency/Period],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Order Currency/Total])) > 0 AND NOT IsNull([Calculated POC Revenue in Order Currency/Total]), 
+                    Replace([Calculated POC Revenue in Order Currency/Total], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Order Currency/Total],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Acc. Currency/Period])) > 0 AND NOT IsNull([Calculated POC Revenue in Acc. Currency/Period]), 
+                    Replace([Calculated POC Revenue in Acc. Currency/Period], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Acc. Currency/Period],
+            
+            [Project ID] & '|' & [Year] & '|' & [Period] as [PCRR.ProjectPeriodKey],
+            [Project ID] & '|' & [Year] & '|' & [Period] as [MST.Key],
+            FileBaseName() as [PCRR.Source File],
+            [Year] * 100 + [Period] as [PCRR.YearPeriod]
+        FROM [$(vFile)] (ooxml, embedded labels);
+    ELSE
+        CONCATENATE (PCRR_Data)
+        LOAD
+            Text([Project ID]) as [PCRR.Project ID],
+            If(Len(Trim([Project Description])) > 0 AND NOT IsNull([Project Description]), 
+                [Project Description], '-') as [PCRR.Project Description],
+            If(Len(Trim([Person ID (CL)])) > 0 AND NOT IsNull([Person ID (CL)]), 
+                [Person ID (CL)], '-') as [PCRR.Person ID (CL)],
+            If(Len(Trim([Person ID (PM1)])) > 0 AND NOT IsNull([Person ID (PM1)]), 
+                [Person ID (PM1)], '-') as [PCRR.Person ID (PM1)],
+            If(Len(Trim([Person ID (PM2)])) > 0 AND NOT IsNull([Person ID (PM2)]), 
+                [Person ID (PM2)], '-') as [PCRR.Person ID (PM2)],
+            Num([Year], '0') as [PCRR.Year],
+            Num([Period], '0') as [PCRR.Period],
+            If(Len(Trim([Order Currency])) > 0 AND NOT IsNull([Order Currency]), 
+                [Order Currency], '-') as [PCRR.Order Currency],
+            If(Len(Trim([Project Currency])) > 0 AND NOT IsNull([Project Currency]), 
+                [Project Currency], 'EUR') as [PCRR.Project Currency],
+            
+            Num(If(Len(Trim([Currency Rate])) > 0 AND NOT IsNull([Currency Rate]), 
+                    Replace([Currency Rate], '.', ','), 0), '#0,00####') as [PCRR.Currency Rate],
+            
+            If(Len(Trim([CO Comments])) > 0 AND NOT IsNull([CO Comments]), 
+                [CO Comments], '-') as [PCRR.CO Comments],
+            If(Len(Trim([POC Method])) > 0 AND NOT IsNull([POC Method]), 
+                [POC Method], '-') as [PCRR.POC Method],
+            If(Len(Trim([Project Group])) > 0 AND NOT IsNull([Project Group]), 
+                [Project Group], '-') as [PCRR.Project Group],
+            Num(If(Len(Trim([Currency Rate Type])) > 0 AND NOT IsNull([Currency Rate Type]), 
+                    [Currency Rate Type], 0), '0') as [PCRR.Currency Rate Type],
+            If(Len(Trim([Status Customer Order])) > 0 AND NOT IsNull([Status Customer Order]), 
+                [Status Customer Order], '-') as [PCRR.Status Customer Order],
+            If(Len(Trim([Customer Group])) > 0 AND NOT IsNull([Customer Group]), 
+                [Customer Group], '-') as [PCRR.Customer Group],
+            If(Len(Trim([Customer])) > 0 AND NOT IsNull([Customer]), 
+                [Customer], '-') as [PCRR.Customer],
+            If(Len(Trim([Customer Name])) > 0 AND NOT IsNull([Customer Name]), 
+                [Customer Name], '-') as [PCRR.Customer Name],
+            Text([Plan Finish]) as [PCRR.Plan Finish],
+            
+            Num(If(Len(Trim([Planned Revenue])) > 0 AND NOT IsNull([Planned Revenue]), 
+                    Replace([Planned Revenue], '.', ','), 0), '#.##0,00') as [PCRR.Planned Revenue],
+            
+            Num(If(Len(Trim([Estimated Revenue])) > 0 AND NOT IsNull([Estimated Revenue]), 
+                    Replace([Estimated Revenue], '.', ','), 0), '#.##0,00') as [PCRR.Estimated Revenue],
+            
+            Num(If(Len(Trim([Estimated Costs])) > 0 AND NOT IsNull([Estimated Costs]), 
+                    Replace([Estimated Costs], '.', ','), 0), '#.##0,00') as [PCRR.Estimated Costs],
+            
+            Num(If(Len(Trim([Actual Capitalized Costs])) > 0 AND NOT IsNull([Actual Capitalized Costs]), 
+                    Replace([Actual Capitalized Costs], '.', ','), 0), '#.##0,00') as [PCRR.Actual Capitalized Costs],
+            
+            Num(If(Len(Trim([Total Actual Cost])) > 0 AND NOT IsNull([Total Actual Cost]), 
+                    Replace([Total Actual Cost], '.', ','), 0), '#.##0,00') as [PCRR.Total Actual Cost],
+            
+            Num(If(Len(Trim([Project Inventory])) > 0 AND NOT IsNull([Project Inventory]), 
+                    Replace([Project Inventory], '.', ','), 0), '#.##0,00') as [PCRR.Project Inventory],
+            
+            Num(If(Len(Trim([POC Previously Accumulated])) > 0 AND NOT IsNull([POC Previously Accumulated]), 
+                    Replace([POC Previously Accumulated], '.', ','), 0), '#.##0,00') as [PCRR.POC Previously Accumulated],
+            
+            Num(If(Len(Trim([POC Current Period])) > 0 AND NOT IsNull([POC Current Period]), 
+                    Replace([POC Current Period], '.', ','), 0) * 100, '#.##0,00') as [PCRR.POC Current Period %],
+            
+            Num(If(Len(Trim([Costs Recognized Current Period])) > 0 AND NOT IsNull([Costs Recognized Current Period]), 
+                    Replace([Costs Recognized Current Period], '.', ','), 0), '#.##0,00') as [PCRR.Costs Recognized Current Period],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Order Currency/Period])) > 0 AND NOT IsNull([Calculated POC Revenue in Order Currency/Period]), 
+                    Replace([Calculated POC Revenue in Order Currency/Period], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Order Currency/Period],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Order Currency/Total])) > 0 AND NOT IsNull([Calculated POC Revenue in Order Currency/Total]), 
+                    Replace([Calculated POC Revenue in Order Currency/Total], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Order Currency/Total],
+            
+            Num(If(Len(Trim([Calculated POC Revenue in Acc. Currency/Period])) > 0 AND NOT IsNull([Calculated POC Revenue in Acc. Currency/Period]), 
+                    Replace([Calculated POC Revenue in Acc. Currency/Period], '.', ','), 0), '#.##0,00') as [PCRR.Calculated POC Revenue in Acc. Currency/Period],
+            
+            [Project ID] & '|' & [Year] & '|' & [Period] as [PCRR.ProjectPeriodKey],
+            [Project ID] & '|' & [Year] & '|' & [Period] as [MST.Key],
+            FileBaseName() as [PCRR.Source File],
+            [Year] * 100 + [Period] as [PCRR.YearPeriod]
+        FROM [$(vFile)] (ooxml, embedded labels);
+    END IF
+NEXT vFile;
+
+
+// 2. MAPPING-TABELLEN: Test10 Forecast importieren
+
+// 2.1 Test10 Forecast Mapping (statt JOIN für bessere Performance)
+Map_Test10_Forecast:
+MAPPING LOAD
+    [Test10.Project ID] & '|' & [Test10.Year] & '|' & [Test10.Period] as %JoinKey,
+    [Test10.Forecast REV in Acc. Currency]
+RESIDENT Test10_Data;
+
+
+// 3. HILFSTABELLEN: Rankings vorbereiten
+
+// 3.1 Revenue Ranking pro Year/Period mit laufendem Counter
+PCRR_RevenueRank:
+LOAD
+    [PCRR.YearPeriod],
+    [PCRR.Project ID],
+    [PCRR.Year],
+    [PCRR.Period],
+    If(Previous([PCRR.YearPeriod]) = [PCRR.YearPeriod], 
+        Peek('TempRevRank') + 1, 
+        1) as TempRevRank
+RESIDENT PCRR_Data
+WHERE [PCRR.Status Customer Order] <> 'Invoiced/Closed'
+ORDER BY [PCRR.YearPeriod], [PCRR.Estimated Revenue] DESC, [PCRR.Project ID] ASC;
+
+// 3.2 POC Ranking pro Year/Period mit laufendem Counter (abhängig von 3.1)
+PCRR_POCRank:
+LOAD
+    [PCRR.YearPeriod],
+    [PCRR.Project ID],
+    [PCRR.Year],
+    [PCRR.Period],
+    If(Previous([PCRR.YearPeriod]) = [PCRR.YearPeriod], 
+        Peek('TempPOCRank') + 1, 
+        1) as TempPOCRank
+RESIDENT PCRR_Data
+WHERE [PCRR.Status Customer Order] <> 'Invoiced/Closed'
+ORDER BY [PCRR.YearPeriod], [PCRR.Calculated POC Revenue in Acc. Currency/Period] DESC, [PCRR.Project ID] ASC;
+
+// 3.3 Rankings zu PCRR_Data joinen (abhängig von 3.1 und 3.2)
+LEFT JOIN (PCRR_Data)
+LOAD 
+    [PCRR.Project ID],
+    [PCRR.Year],
+    [PCRR.Period],
+    TempRevRank
+RESIDENT PCRR_RevenueRank;
+
+LEFT JOIN (PCRR_Data)
+LOAD 
+    [PCRR.Project ID],
+    [PCRR.Year],
+    [PCRR.Period],
+    TempPOCRank
+RESIDENT PCRR_POCRank;
+
+
+// 4. BERECHNUNGEN: KPI-Felder und Test10/Test16 Integration
+
+// 4.1 KPI-Felder und alle berechneten Felder hinzufügen
+PCRR_Data_Final:
+LOAD
+    *,
+    
+    // 4.1.1 POC Current % - Manual vs. Calculated (keine Abhängigkeiten)
+    Num(
+        If([PCRR.POC Method] = 'Manual',
+            If([PCRR.POC Current Period %] <> 0, 
+                [PCRR.POC Current Period %], 
+                0),
+            If([PCRR.Estimated Costs] <> 0,
+                ([PCRR.Total Actual Cost] / [PCRR.Estimated Costs]) * 100,
+                0)
+        ), 
+        '#.##0,00'
+    ) as [PCRR.C.KPI.POC Current %],
+    
+    // 4.1.2 POC Revenue Cumulative (keine Abhängigkeiten)
+    Num(
+        If([PCRR.POC Current Period %] <> 0 AND [PCRR.Estimated Revenue] <> 0,
+            (([PCRR.POC Current Period %] / 100) * [PCRR.Estimated Revenue]),
+            0),
+        '#.##0,00'
+    ) as [PCRR.C.KPI.POC Revenue Cumulative],
+    
+    // 4.1.3 Estimated Income (keine Abhängigkeiten)
+    Num([PCRR.Estimated Revenue] - [PCRR.Estimated Costs], '#.##0,00') as [PCRR.C.KPI.Estimated Income],
+    
+    // 4.1.4 Estimated Margin (keine Abhängigkeiten)
+    Num(
+        If([PCRR.Estimated Revenue] <> 0,
+            (([PCRR.Estimated Revenue] - [PCRR.Estimated Costs]) / [PCRR.Estimated Revenue]) * 100,
+            0),
+        '#.##0,00'
+    ) as [PCRR.C.KPI.Estimated Margin],
+    
+    // 4.1.5 Revenue Ranking (aus Hilfstabelle)
+    Alt(TempRevRank, 99999) as [PCRR.C.Revenue Rank],
+    
+    // 4.1.6 POC Ranking (aus Hilfstabelle)
+    Alt(TempPOCRank, 99999) as [PCRR.C.Calc POC Revenue Rank],
+    
+    // 4.1.7 Test10 Forecast via MAPPING (statt JOIN)
+    ApplyMap('Map_Test10_Forecast', 
+             [PCRR.Project ID] & '|' & [PCRR.Year] & '|' & [PCRR.Period], 
+             0) as [PCRR.Test10.Forecast Temp],
+    
+    // 4.1.8 Test16 Exists Check
+    If(Exists([Test16.Project ID], [PCRR.Project ID]), 1, 0) as [PCRR.C.Test16_Exists]
+    
+RESIDENT PCRR_Data;
+
+// 4.2 Test10 Forecast und Delta final berechnen (abhängig von 4.1.7)
+PCRR_Data_Final2:
+LOAD
+    *,
+    
+    // Test10 Forecast Display (als Zahl formatiert)
+    Num([PCRR.Test10.Forecast Temp], '#.##0,00') as [PCRR.C.Test10.Forecast],
+    
+    // Test10 Delta ABSOLUT (mit Vorzeichen: Revenue - Forecast)
+    Num([PCRR.Calculated POC Revenue in Acc. Currency/Period] - [PCRR.Test10.Forecast Temp], 
+        '#.##0,00') as [PCRR.C.Test10.Delta Absolut],
+    
+    // Test10 Delta BETRAG (ohne Vorzeichen: immer positiv)
+    Num(Fabs([PCRR.Calculated POC Revenue in Acc. Currency/Period] - [PCRR.Test10.Forecast Temp]), 
+        '#.##0,00') as [PCRR.C.Test10.Delta Betrag]
+    
+RESIDENT PCRR_Data_Final;
+
+// 5. AUFRÄUMEN: Temporäre Felder und Tabellen droppen
+DROP FIELDS TempRevRank, TempPOCRank, [PCRR.Test10.Forecast Temp] FROM PCRR_Data_Final2;
+DROP TABLE PCRR_Data;
+DROP TABLE PCRR_Data_Final;
+DROP TABLE PCRR_RevenueRank;
+DROP TABLE PCRR_POCRank;
+RENAME TABLE PCRR_Data_Final2 TO PCRR_Data;

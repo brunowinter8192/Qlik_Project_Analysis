@@ -1,0 +1,18 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// 1. HAUPTDATEN-LOAD: Test16 FP_02 Report
+Test16_Data:
+LOAD 
+    [Project ID] as [Test16.Project ID],
+    
+    If(Len(Trim([Order State])) = 0 OR IsNull([Order State]), 
+       '-', 
+       [Order State]) as [Test16.Order State],
+    
+    If(Len(Trim([Final Invoice Date])) = 0 OR IsNull([Final Invoice Date]), 
+       '-', 
+       Date(Date#([Final Invoice Date], 'DD.MM.YYYY'), 'DD.MM.YYYY')) as [Test16.Final Invoice Date]
+       
+FROM [lib://DATA Transfer:DataFiles/Test16_FP02_102025.xlsx]
+(ooxml, embedded labels);

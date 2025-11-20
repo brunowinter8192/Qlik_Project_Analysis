@@ -1,0 +1,38 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// 1. HAUPTDATEN-LOAD: Test10 CROSSTABLE Pivot-Daten
+Test10_Raw:
+CROSSTABLE([TempMonth], [TempValue], 1)
+LOAD 
+    [Project ID],
+    [Sep 25], [Okt 25], [Nov 25], [Dez 25],
+    [Jan 26], [Feb 26], [Mrz 26], [Apr 26],
+    [Mai 26], [Jun 26], [Jul 26], [Aug 26],
+    [Sep 26], [Okt 26], [Nov 26], [Dez 26]
+FROM [lib://DATA Transfer:DataFiles/Test10_PLAN_IST*.xlsx]
+(ooxml, embedded labels);
+
+// 2. TRANSFORMATION: Umbauen zu strukturierter Tabelle
+Test10_Data:
+LOAD
+    Text([Project ID]) as [Test10.Project ID],  // ← NEU: Text()!
+    
+    Num(Match(Left(TempMonth, 3), 'Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 
+              'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'), '0') as [Test10.Period],  // ← NEU: Num()!
+    
+    Num(If(Right(TempMonth, 2) = '25', 2025, 2026), '0') as [Test10.Year],  // ← NEU: Num()!
+    
+    Num(Alt(Num#(Replace(TempValue, '.', ''), '#0,00'),
+            Num#(TempValue, '#0.00'),
+            Num#(TempValue, '#0'), 999999), '#.##0,00') as [Test10.Forecast REV in Acc. Currency],
+    
+    [Project ID] & '|' & 
+    If(Right(TempMonth, 2) = '25', 2025, 2026) & '|' & 
+    Match(Left(TempMonth, 3), 'Jan', 'Feb', 'Mrz', 'Apr', 'Mai', 'Jun', 
+          'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez') as [MST.Key]  // ← NEU: MST.Key!
+    
+RESIDENT Test10_Raw;
+
+// 3. AUFRÄUMEN: Temporäre Tabelle droppen
+DROP TABLE Test10_Raw;

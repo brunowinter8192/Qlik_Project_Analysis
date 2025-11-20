@@ -1,0 +1,144 @@
+SET ThousandSep='.';
+SET DecimalSep=',';
+
+// 1. HAUPTDATEN-LOAD: ANL_Data aus Excel-Files
+FOR EACH vFile IN FileList('lib://DATA Transfer:DataFiles/Analysis_*')
+    IF NoOfRows('ANL_Data') = 0 OR IsNull(TableNumber('ANL_Data')) THEN
+        ANL_Data:
+        LOAD 
+            Text(PROJECT_ID) as [ANL.Project ID],
+            If(Len(Trim(PCRE)) = 0 OR IsNull(PCRE), '-', PCRE) as [ANL.PCRE],
+            Num(YEAR, '0') as [ANL.Year],
+            Num(PERIOD, '0') as [ANL.Period],
+            If(Len(Trim(PROJECT_ID_DESC)) = 0 OR IsNull(PROJECT_ID_DESC), '-', PROJECT_ID_DESC) as [ANL.Project Description],
+            If(Len(Trim(PERSON_ID)) = 0 OR IsNull(PERSON_ID), '-', PERSON_ID) as [ANL.Person ID],
+            If(Len(Trim(CUSTOMER_GROUP)) = 0 OR IsNull(CUSTOMER_GROUP), '-', CUSTOMER_GROUP) as [ANL.Customer Group],
+            
+            // Numerische Rohfelder (NULL = 0)
+            Num(If(Len(Trim(BALANCE_VALUE)) > 0 AND NOT IsNull(BALANCE_VALUE), 
+                    Replace(BALANCE_VALUE, '.', ','), 0), '#.##0,00') as [ANL.Balance Value],
+            
+            Num(If(Len(Trim(BALANCE_QTY)) > 0 AND NOT IsNull(BALANCE_QTY), 
+                    Replace(BALANCE_QTY, '.', ','), 0), '#.##0,00') as [ANL.Balance Qty],
+            
+            Num(If(Len(Trim(INVENTORY_VALUE)) > 0 AND NOT IsNull(INVENTORY_VALUE), 
+                    Replace(INVENTORY_VALUE, '.', ','), 0), '#.##0,00') as [ANL.Inventory Value],
+            
+            Num(If(Len(Trim(INVENTORY_QTY)) > 0 AND NOT IsNull(INVENTORY_QTY), 
+                    Replace(INVENTORY_QTY, '.', ','), 0), '#.##0,00') as [ANL.Inventory Qty],
+            
+            Num(If(Len(Trim(UNIT_COST)) > 0 AND NOT IsNull(UNIT_COST), 
+                    Replace(UNIT_COST, '.', ','), 0), '#.##0,00') as [ANL.Unit Cost],
+            
+            FileBaseName() as [ANL.Source File],
+            YEAR * 100 + PERIOD as [ANL.YearPeriod],
+            
+            // Master Key
+            PROJECT_ID & '|' & YEAR & '|' & PERIOD as [MST.Key]
+        FROM [$(vFile)] (ooxml, embedded labels);
+        
+    ELSE
+        CONCATENATE (ANL_Data)
+        LOAD 
+            Text(PROJECT_ID) as [ANL.Project ID],
+            If(Len(Trim(PCRE)) = 0 OR IsNull(PCRE), '-', PCRE) as [ANL.PCRE],
+            Num(YEAR, '0') as [ANL.Year],
+            Num(PERIOD, '0') as [ANL.Period],
+            If(Len(Trim(PROJECT_ID_DESC)) = 0 OR IsNull(PROJECT_ID_DESC), '-', PROJECT_ID_DESC) as [ANL.Project Description],
+            If(Len(Trim(PERSON_ID)) = 0 OR IsNull(PERSON_ID), '-', PERSON_ID) as [ANL.Person ID],
+            If(Len(Trim(CUSTOMER_GROUP)) = 0 OR IsNull(CUSTOMER_GROUP), '-', CUSTOMER_GROUP) as [ANL.Customer Group],
+            
+            Num(If(Len(Trim(BALANCE_VALUE)) > 0 AND NOT IsNull(BALANCE_VALUE), 
+                    Replace(BALANCE_VALUE, '.', ','), 0), '#.##0,00') as [ANL.Balance Value],
+            
+            Num(If(Len(Trim(BALANCE_QTY)) > 0 AND NOT IsNull(BALANCE_QTY), 
+                    Replace(BALANCE_QTY, '.', ','), 0), '#.##0,00') as [ANL.Balance Qty],
+            
+            Num(If(Len(Trim(INVENTORY_VALUE)) > 0 AND NOT IsNull(INVENTORY_VALUE), 
+                    Replace(INVENTORY_VALUE, '.', ','), 0), '#.##0,00') as [ANL.Inventory Value],
+            
+            Num(If(Len(Trim(INVENTORY_QTY)) > 0 AND NOT IsNull(INVENTORY_QTY), 
+                    Replace(INVENTORY_QTY, '.', ','), 0), '#.##0,00') as [ANL.Inventory Qty],
+            
+            Num(If(Len(Trim(UNIT_COST)) > 0 AND NOT IsNull(UNIT_COST), 
+                    Replace(UNIT_COST, '.', ','), 0), '#.##0,00') as [ANL.Unit Cost],
+            
+            FileBaseName() as [ANL.Source File],
+            YEAR * 100 + PERIOD as [ANL.YearPeriod],
+            
+            PROJECT_ID & '|' & YEAR & '|' & PERIOD as [MST.Key]
+        FROM [$(vFile)] (ooxml, embedded labels);
+    END IF
+NEXT vFile;
+
+
+// 2. HILFSTABELLEN: Aggregierte Calculation-Werte vorbereiten
+
+// 2.1 Calculations auf Projekt-Jahr-Period Ebene
+ANL_C_Aggregated:
+LOAD
+    [ANL.Project ID],
+    [ANL.Year],
+    [ANL.Period],
+    Num(Sum([ANL.Inventory Value]), '#.##0,00') as [ANL.C.Inventory Value],
+    Num(Sum([ANL.Balance Value]), '#.##0,00') as [ANL.C.Balance Value],
+    Num(Sum([ANL.Inventory Value]) * 0.2, '#.##0,00') as [ANL.C.MGK]
+RESIDENT ANL_Data
+GROUP BY [ANL.Project ID], [ANL.Year], [ANL.Period];
+
+// 2.2 Kumulative Balance (abhängig von 2.1)
+ANL_C_Cumulative:
+LOAD
+    [ANL.Project ID],
+    [ANL.Year],
+    [ANL.Period],
+    [ANL.C.Balance Value],
+    If(Previous([ANL.Project ID]) = [ANL.Project ID],
+        RangeSum([ANL.C.Balance Value], Peek('CumulativeBalance')),
+        [ANL.C.Balance Value]) as CumulativeBalance
+RESIDENT ANL_C_Aggregated
+ORDER BY [ANL.Project ID], [ANL.Year], [ANL.Period];
+
+
+// 3. BERECHNUNGEN: Calculation-Felder zu ANL_Data hinzufügen
+
+// 3.1 Aggregierte Calculation-Werte joinen
+LEFT JOIN (ANL_Data)
+LOAD
+    [ANL.Project ID],
+    [ANL.Year],
+    [ANL.Period],
+    [ANL.C.Inventory Value],
+    [ANL.C.Balance Value],
+    [ANL.C.MGK]
+RESIDENT ANL_C_Aggregated;
+
+// 3.2 Kumulative Balance joinen (abhängig von 3.1)
+LEFT JOIN (ANL_Data)
+LOAD
+    [ANL.Project ID],
+    [ANL.Year],
+    [ANL.Period],
+    Num(CumulativeBalance, '#.##0,00') as [ANL.C.Balance Value Cumulative]
+RESIDENT ANL_C_Cumulative;
+
+// 3.3 Unit Cost berechnen (abhängig von Rohfeldern)
+ANL_Data_Final:
+LOAD
+    *,
+    Num(
+        If([ANL.Balance Qty] <> 0,
+            [ANL.Balance Value] / [ANL.Balance Qty],
+            0
+        ), 
+        '#.##0,00'
+    ) as [ANL.C.Unit Cost]
+RESIDENT ANL_Data;
+
+DROP TABLE ANL_Data;
+RENAME TABLE ANL_Data_Final TO ANL_Data;
+
+
+// 4. AUFRÄUMEN: Temporäre Tabellen droppen
+DROP TABLE ANL_C_Aggregated;
+DROP TABLE ANL_C_Cumulative;

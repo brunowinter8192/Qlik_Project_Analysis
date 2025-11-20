@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Revenue Tracking Qlik Sense Project\n\n- Add data load scripts (Test10.psql, PCRR.psql, MST.psql)\n- Add documentation (README.md, claude.md)\n- Add coding standards split into 4 files (Docs/01-04_*.md)\n- Add project description (Docs/qlik-sense-projektbeschreibung.md)\n\nProject structure:\n- Data load scripts follow execution order: Test10 → PCRR → MST\n- Master Table pattern for Star Schema\n- Comprehensive coding standards (<500 lines each)\n\n🤖 Generated with Claude Code\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(echo:*)",
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(where:*)",
+      "Bash(nul)",
+      "Bash(py compare_excel_columns.py)",
+      "Bash(/c/Users/BNW/AppData/Local/Microsoft/WindowsApps/python compare_excel_columns.py)",
+      "Bash(git rm:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
