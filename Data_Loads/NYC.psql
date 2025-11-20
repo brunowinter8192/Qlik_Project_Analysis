@@ -45,7 +45,7 @@ RESIDENT NYC_Raw;
 DROP TABLE NYC_Raw;
 
 
-// 2. NYC2: PCRR Projekte die IN Test10 sind UND in NYC_Forecast Perioden
+// 2. NYC2: PCRR Projekte die NICHT IN Test10 sind UND in NYC_Forecast Perioden
 NYC2_Data:
 LOAD
     Text([PCRR.Project ID]) as [NYC2.Project ID],
@@ -54,7 +54,7 @@ LOAD
     Num([PCRR.Calculated POC Revenue in Acc. Currency/Period], '#.##0,00') as [NYC2.Revenue],
     [PCRR.Project ID] & '|' & [PCRR.Year] & '|' & [PCRR.Period] as [MST.Key]
 RESIDENT PCRR_Data
-WHERE Exists([Test10.Project ID], [PCRR.Project ID])
+WHERE NOT Exists([Test10.Project ID], [PCRR.Project ID])
     AND Exists([NYC.YearPeriodKey], [PCRR.Year] & '|' & [PCRR.Period]);
 
 
